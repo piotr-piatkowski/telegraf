@@ -19,6 +19,9 @@ type Client interface {
 	// Players returns the players on the scoreboard.
 	Players() ([]string, error)
 
+	// Number of connected players
+	PlayerCount() (int, error)
+
 	// Scores return the objective scores for a player.
 	Scores(player string) ([]Score, error)
 }
@@ -30,10 +33,19 @@ type Minecraft struct {
 	Password string `toml:"password"`
 
 	client Client
+	Log    telegraf.Logger `toml:"-"`
 }
 
 func (*Minecraft) SampleConfig() string {
 	return sampleConfig
+}
+
+func (s *Minecraft) GenericTags() map[string]string {
+	return map[string]string{
+		"server": s.Server + ":" + s.Port,
+		"source": s.Server,
+		"port":   s.Port,
+	}
 }
 
 func (s *Minecraft) Gather(acc telegraf.Accumulator) error {
@@ -47,18 +59,24 @@ func (s *Minecraft) Gather(acc telegraf.Accumulator) error {
 		return err
 	}
 
+	playersCount, err := s.client.PlayerCount()
+	if err != nil {
+		return err
+	}
+	tags := s.GenericTags()
+	fields := map[string]interface{}{
+		"players_count": playersCount,
+	}
+	acc.AddFields("minecraft", fields, tags)
+
 	for _, player := range players {
 		scores, err := s.client.Scores(player)
 		if err != nil {
 			return err
 		}
 
-		tags := map[string]string{
-			"player": player,
-			"server": s.Server + ":" + s.Port,
-			"source": s.Server,
-			"port":   s.Port,
-		}
+		tags := s.GenericTags()
+		tags["player"] = player
 
 		var fields = make(map[string]interface{}, len(scores))
 		for _, score := range scores {

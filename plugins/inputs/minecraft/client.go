@@ -11,6 +11,7 @@ import (
 var (
 	scoreboardRegexLegacy = regexp.MustCompile(`(?U):\s(?P<value>\d+)\s\((?P<name>.*)\)`)
 	scoreboardRegex       = regexp.MustCompile(`\[(?P<name>[^\]]+)\]: (?P<value>\d+)`)
+	countRegex            = regexp.MustCompile(`There are (\d+) out of maximum (\d+) players`)
 )
 
 // Connection is an established connection to the Minecraft server.
@@ -74,6 +75,48 @@ func (c *client) Connect() error {
 	}
 	c.conn = conn
 	return nil
+}
+
+func removeMinecraftColorCodes(input string) string {
+	var result strings.Builder
+	isColorCode := false
+
+	for _, r := range input {
+		if r == '§' {
+			isColorCode = true
+		} else if isColorCode {
+			isColorCode = false
+		} else {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
+}
+
+func (c *client) PlayerCount() (int, error) {
+	if c.conn == nil {
+		err := c.Connect()
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	resp, err := c.conn.Execute("list")
+	if err != nil {
+		c.conn = nil
+		return 0, err
+	}
+
+	resp = removeMinecraftColorCodes(resp)
+	matches := countRegex.FindStringSubmatch(resp)
+
+	currentPlayers, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, err
+	}
+
+	return currentPlayers, nil
 }
 
 func (c *client) Players() ([]string, error) {
